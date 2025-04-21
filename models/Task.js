@@ -27,7 +27,7 @@ const taskSchema = new mongoose.Schema({
     },
     priority: {
         type: String,
-        enum: ['low', 'medium', 'high'],
+        enum: ['low', 'medium', 'high', 'urgent'],
         default: 'medium'
     },
     dueDate: {
@@ -107,6 +107,9 @@ taskSchema.methods.completeTask = async function() {
             
             // Additional points based on priority
             switch(this.priority) {
+                case 'urgent':
+                    this.rewardPoints += 50;
+                    break;
                 case 'high':
                     this.rewardPoints += 30;
                     break;
