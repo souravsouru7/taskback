@@ -104,3 +104,4 @@ npm start
 ## Frontend
 
 The frontend part of the application will be developed separately using React.js. Stay tuned for updates! 
+ 

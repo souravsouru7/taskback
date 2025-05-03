@@ -59,6 +59,7 @@ router.post('/', [
 });
 
 // Get specific project by ID with detailed information
+// Get specific project by ID with detailed information
 router.get('/:id', auth, async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)
@@ -67,6 +68,14 @@ router.get('/:id', auth, async (req, res) => {
             .populate({
                 path: 'documents.uploadedBy',
                 select: 'name email'
+            })
+            // Add this populate call to include tasks
+            .populate({
+                path: 'tasks',
+                populate: {
+                    path: 'assignedTo',
+                    select: 'firstName lastName email'
+                }
             });
 
         if (!project) {
@@ -80,19 +89,19 @@ router.get('/:id', auth, async (req, res) => {
             return res.status(403).json({ message: 'Access denied' });
         }
 
+        // Get tasks for this project
+        const tasks = await Task.find({ project: project._id })
+            .populate('assignedTo', 'firstName lastName email')
+            .sort({ createdAt: -1 });
+
         // Get project statistics
-        const taskCount = await Task.countDocuments({ project: project._id });
-        const completedTasks = await Task.countDocuments({ 
-            project: project._id, 
-            status: 'completed' 
-        });
-        const overdueTasks = await Task.countDocuments({ 
-            project: project._id, 
-            status: 'overdue' 
-        });
+        const taskCount = tasks.length;
+        const completedTasks = tasks.filter(task => task.status === 'completed').length;
+        const overdueTasks = tasks.filter(task => task.status === 'overdue').length;
 
         const projectWithStats = {
             ...project.toObject(),
+            tasks: tasks, // Include the tasks in the response
             statistics: {
                 totalTasks: taskCount,
                 completedTasks,
@@ -107,7 +116,6 @@ router.get('/:id', auth, async (req, res) => {
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
-
 // Update project with validation
 router.put('/:id', [
     auth,

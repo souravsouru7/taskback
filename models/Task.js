@@ -98,30 +98,19 @@ taskSchema.methods.completeTask = async function() {
         this.status = 'completed';
         this.completionDate = now;
         
-        // Check if task was completed on time
-        this.isCompletedOnTime = now <= this.dueDate;
+        // Check if task was completed on time (before or on due date)
+        const dueDate = new Date(this.dueDate);
+        dueDate.setHours(23, 59, 59, 999); // Set to end of day for fair comparison
         
+        this.isCompletedOnTime = now <= dueDate;
+        
+        // Only award points if completed on time
         if (this.isCompletedOnTime) {
             // Base points for on-time completion
             this.rewardPoints = 50;
-            
-            // Additional points based on priority
-            switch(this.priority) {
-                case 'urgent':
-                    this.rewardPoints += 50;
-                    break;
-                case 'high':
-                    this.rewardPoints += 30;
-                    break;
-                case 'medium':
-                    this.rewardPoints += 20;
-                    break;
-                case 'low':
-                    this.rewardPoints += 10;
-                    break;
-            }
             console.log(`Task ${this._id} completed on time. Awarding ${this.rewardPoints} points.`);
         } else {
+            this.rewardPoints = 0;
             console.log(`Task ${this._id} completed late. No points awarded.`);
         }
         
@@ -137,7 +126,7 @@ taskSchema.methods.completeTask = async function() {
             console.log(`Updating rewards for user ${user.email}`);
             if (this.isCompletedOnTime) {
                 await user.updateStreak(now);
-                await user.addRewardPoints(this.rewardPoints, `Task completion reward: ${this.title}`);
+                await user.addRewardPoints(this.rewardPoints, `On-time task completion: ${this.title}`);
                 console.log(`Added ${this.rewardPoints} points to user ${user.email}`);
             }
         } else {

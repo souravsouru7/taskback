@@ -4,6 +4,7 @@ const Task = require('../models/Task');
 const Project = require('../models/Project');
 const User = require('../models/User');
 const { auth, isAdmin } = require('../middleware/auth');
+const Notification = require('../models/Notification');
 
 // Create a new task (Admin only)
 router.post('/', auth, isAdmin, async (req, res) => {
@@ -180,12 +181,71 @@ router.post('/:id/comments', auth, async (req, res) => {
             return res.status(404).json({ message: 'Task not found' });
         }
 
+        // Add the comment
         task.comments.push({
             text: req.body.text,
             postedBy: req.user._id
         });
 
         await task.save();
+
+        // Create notifications for:
+        // 1. The task creator
+        // 2. The assigned user
+        // 3. Admin users
+        const notificationPromises = [];
+
+        // Get the current user's name
+        const currentUser = await User.findById(req.user._id);
+        const commenterName = currentUser ? currentUser.name : 'unknown';
+
+        // Notify task creator if not the commenter
+        if (task.createdBy.toString() !== req.user._id.toString()) {
+            notificationPromises.push(
+                Notification.create({
+                    recipient: task.createdBy,
+                    task: task._id,
+                    type: 'comment',
+                    actor: req.user._id,
+                    message: `New comment on task "${task.title}" by ${commenterName}`
+                })
+            );
+        }
+
+        // Notify assigned user if not the commenter
+        if (task.assignedTo.toString() !== req.user._id.toString()) {
+            notificationPromises.push(
+                Notification.create({
+                    recipient: task.assignedTo,
+                    task: task._id,
+                    type: 'comment',
+                    actor: req.user._id,
+                    message: `New comment on task "${task.title}" by ${commenterName}`
+                })
+            );
+        }
+
+        // Notify admin users only if they are not the task creator or assigned user
+        const adminUsers = await User.find({ role: 'admin' });
+        adminUsers.forEach(admin => {
+            // Skip if admin is the commenter, task creator, or assigned user
+            if (admin._id.toString() !== req.user._id.toString() &&
+                admin._id.toString() !== task.createdBy.toString() &&
+                admin._id.toString() !== task.assignedTo.toString()) {
+                notificationPromises.push(
+                    Notification.create({
+                        recipient: admin._id,
+                        task: task._id,
+                        type: 'comment',
+                        actor: req.user._id,
+                        message: `New comment on task "${task.title}" by ${commenterName}`
+                    })
+                );
+            }
+        });
+
+        await Promise.all(notificationPromises);
+
         res.json(task);
     } catch (error) {
         res.status(400).json({ message: error.message });
