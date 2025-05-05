@@ -13,7 +13,7 @@ const notificationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['comment'],
+        enum: ['comment', 'extension_request', 'extension_response'],
         required: true
     },
     actor: {

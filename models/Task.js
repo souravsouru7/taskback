@@ -51,6 +51,37 @@ const taskSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    extensionRequest: {
+        requested: {
+            type: Boolean,
+            default: false
+        },
+        status: {
+            type: String,
+            enum: ['pending', 'approved', 'rejected'],
+            default: 'pending'
+        },
+        requestedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        requestedAt: {
+            type: Date
+        },
+        reason: {
+            type: String
+        },
+        newDueDate: {
+            type: Date
+        },
+        approvedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        approvedAt: {
+            type: Date
+        }
+    },
     comments: [{
         text: String,
         postedBy: {

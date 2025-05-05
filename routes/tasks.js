@@ -358,4 +358,142 @@ router.get('/rewards/leaderboard', auth, async (req, res) => {
     }
 });
 
+// Request task extension
+router.post('/:id/extension-request', auth, async (req, res) => {
+    try {
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        // Check if user is assigned to this task
+        if (task.assignedTo.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'You are not assigned to this task' });
+        }
+
+        const { reason, newDueDate } = req.body;
+
+        if (!reason || !newDueDate) {
+            return res.status(400).json({ message: 'Reason and new due date are required' });
+        }
+
+        // Validate new due date is after current due date
+        const proposedDate = new Date(newDueDate);
+        if (proposedDate <= task.dueDate) {
+            return res.status(400).json({ message: 'New due date must be after current due date' });
+        }
+
+        task.extensionRequest = {
+            requested: true,
+            status: 'pending',
+            requestedBy: req.user._id,
+            requestedAt: new Date(),
+            reason,
+            newDueDate: proposedDate
+        };
+
+        await task.save();
+
+        // Create notification for admin
+        const notification = new Notification({
+            recipient: task.createdBy, // Assuming admin is the task creator
+            task: task._id,
+            type: 'extension_request',
+            message: `Extension requested for task: ${task.title}`,
+            actor: req.user._id
+        });
+
+        await notification.save();
+
+        res.json({ message: 'Extension request submitted successfully', task });
+    } catch (error) {
+        console.error('Error requesting extension:', error);
+        res.status(500).json({ message: 'Error requesting extension', error: error.message });
+    }
+});
+
+// Handle extension request (Admin only)
+router.patch('/:id/extension-request', auth, isAdmin, async (req, res) => {
+    try {
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        if (!task.extensionRequest.requested) {
+            return res.status(400).json({ message: 'No extension request found for this task' });
+        }
+
+        const { status, newDueDate } = req.body;
+
+        if (!status || !['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ message: 'Valid status (approved/rejected) is required' });
+        }
+
+        if (status === 'approved' && !newDueDate) {
+            return res.status(400).json({ message: 'New due date is required when approving extension' });
+        }
+
+        if (status === 'approved') {
+            const proposedDate = new Date(newDueDate);
+            if (proposedDate <= task.dueDate) {
+                return res.status(400).json({ message: 'New due date must be after current due date' });
+            }
+
+            task.dueDate = proposedDate;
+            task.extensionRequest.status = 'approved';
+            task.extensionRequest.approvedBy = req.user._id;
+            task.extensionRequest.approvedAt = new Date();
+            task.extensionRequest.newDueDate = proposedDate;
+        } else {
+            task.extensionRequest.status = 'rejected';
+            task.extensionRequest.approvedBy = req.user._id;
+            task.extensionRequest.approvedAt = new Date();
+        }
+
+        await task.save();
+
+        // Create notification for the assigned user
+        const notification = new Notification({
+            recipient: task.assignedTo,
+            task: task._id,
+            type: 'extension_response',
+            message: `Your extension request for task "${task.title}" has been ${status}`,
+            actor: req.user._id
+        });
+
+        await notification.save();
+
+        res.json({ 
+            message: `Extension request ${status} successfully`,
+            task 
+        });
+    } catch (error) {
+        console.error('Error handling extension request:', error);
+        res.status(500).json({ message: 'Error handling extension request', error: error.message });
+    }
+});
+
+// Get extension request status
+router.get('/:id/extension-request', auth, async (req, res) => {
+    try {
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        // Check if user is assigned to this task or is admin
+        if (task.assignedTo.toString() !== req.user._id.toString() && 
+            task.createdBy.toString() !== req.user._id.toString() &&
+            req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'You are not authorized to view this extension request' });
+        }
+
+        res.json({ extensionRequest: task.extensionRequest });
+    } catch (error) {
+        console.error('Error fetching extension request:', error);
+        res.status(500).json({ message: 'Error fetching extension request', error: error.message });
+    }
+});
+
 module.exports = router; 
