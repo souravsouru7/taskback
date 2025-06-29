@@ -46,6 +46,14 @@ const taskSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    manualRewardPoints: {
+        type: Number,
+        default: 0
+    },
+    hasManualReward: {
+        type: Boolean,
+        default: false
+    },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -135,8 +143,12 @@ taskSchema.methods.completeTask = async function() {
         
         this.isCompletedOnTime = now <= dueDate;
         
-        // Only award points if completed on time
-        if (this.isCompletedOnTime) {
+        // Handle reward points
+        if (this.hasManualReward) {
+            // Use manually assigned reward points
+            this.rewardPoints = this.manualRewardPoints;
+            console.log(`Task ${this._id} completed with manual reward points: ${this.rewardPoints}`);
+        } else if (this.isCompletedOnTime) {
             // Base points for on-time completion
             this.rewardPoints = 50;
             console.log(`Task ${this._id} completed on time. Awarding ${this.rewardPoints} points.`);
@@ -155,9 +167,9 @@ taskSchema.methods.completeTask = async function() {
         
         if (user) {
             console.log(`Updating rewards for user ${user.email}`);
-            if (this.isCompletedOnTime) {
+            if (this.rewardPoints > 0) {
                 await user.updateStreak(now);
-                await user.addRewardPoints(this.rewardPoints, `On-time task completion: ${this.title}`);
+                await user.addRewardPoints(this.rewardPoints, `Task completion: ${this.title}`);
                 console.log(`Added ${this.rewardPoints} points to user ${user.email}`);
             }
         } else {
@@ -172,3 +184,7 @@ taskSchema.methods.completeTask = async function() {
 };
 
 module.exports = mongoose.model('Task', taskSchema); 
+
+// i want
+// when im creatign the task admin should able to give points instea of automatilly 
+// like whil creating task add option give reward points  that point should give to emplyee

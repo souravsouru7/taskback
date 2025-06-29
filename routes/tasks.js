@@ -12,7 +12,7 @@ router.post('/', auth, isAdmin, async (req, res) => {
         console.log('Creating task with body:', req.body);
         console.log('Current user from middleware:', req.user);
         
-        const { title, description, project, assignedTo, priority, dueDate, status, createdBy } = req.body;
+        const { title, description, project, assignedTo, priority, dueDate, status, createdBy, rewardPoints } = req.body;
 
         // Validate project exists
         const projectExists = await Project.findById(project);
@@ -61,13 +61,25 @@ router.post('/', auth, isAdmin, async (req, res) => {
             priority,
             dueDate,
             createdBy: taskCreator,
-            status: status || 'pending'
+            status: status || 'pending',
+            ...(typeof rewardPoints === 'number' && rewardPoints > 0 ? {
+                manualRewardPoints: rewardPoints,
+                hasManualReward: true,
+                rewardPoints: rewardPoints
+            } : {})
         });
 
         console.log('Task object before saving:', task);
         
         const savedTask = await task.save();
         console.log('Task created successfully:', savedTask._id);
+        // If rewardPoints is provided and assignedTo exists, add points to user immediately
+        if (typeof rewardPoints === 'number' && rewardPoints > 0 && assignedTo) {
+            const user = await User.findById(assignedTo);
+            if (user) {
+                await user.addRewardPoints(rewardPoints, `Manual reward for task assignment: ${title}`);
+            }
+        }
         res.status(201).json(savedTask);
     } catch (error) {
         console.error('Error creating task:', error);
@@ -493,6 +505,46 @@ router.get('/:id/extension-request', auth, async (req, res) => {
     } catch (error) {
         console.error('Error fetching extension request:', error);
         res.status(500).json({ message: 'Error fetching extension request', error: error.message });
+    }
+});
+
+// Set manual reward points for a task (Admin only)
+router.patch('/:id/manual-reward', auth, isAdmin, async (req, res) => {
+    try {
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        const { points } = req.body;
+        if (typeof points !== 'number' || points < 0) {
+            return res.status(400).json({ message: 'Valid points value (non-negative number) is required' });
+        }
+
+        // Set manual reward points
+        task.manualRewardPoints = points;
+        task.hasManualReward = true;
+
+        await task.save();
+
+        // Create notification for the assigned user
+        const notification = new Notification({
+            recipient: task.assignedTo,
+            task: task._id,
+            type: 'reward',
+            message: `Manual reward points (${points}) have been set for task "${task.title}"`,
+            actor: req.user._id
+        });
+
+        await notification.save();
+
+        res.json({ 
+            message: 'Manual reward points set successfully',
+            task 
+        });
+    } catch (error) {
+        console.error('Error setting manual reward points:', error);
+        res.status(500).json({ message: 'Error setting manual reward points', error: error.message });
     }
 });
 
